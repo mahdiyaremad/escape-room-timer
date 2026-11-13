@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Countdown</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/display.css">
+</head>
+<body data-status="idle" data-urgency="calm" data-penalty="0" data-cover="0">
+  <div class="cover" id="cover" aria-hidden="true"><img id="cover-img" alt=""></div>
+  <div class="cam" id="cam" hidden aria-hidden="true"><img id="cam-img" alt="Camera"></div>
+  <div class="grid" aria-hidden="true"></div>
+  <div class="wash" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+  <div class="frame" aria-hidden="true">
+    <span class="tl"></span>
+    <span class="tr"></span>
+    <span class="bl"></span>
+    <span class="br"></span>
+  </div>
+  <main class="stage">
+    <div class="hero" id="hero">
+      <svg class="ecg" id="ecg" viewBox="0 0 800 120" preserveAspectRatio="none" aria-hidden="true">
+        <path id="ecg-path" class="ecg-path" d=""></path>
+      </svg>
+      <div class="clock" id="clock" aria-hidden="true">02:00</div>
+    </div>
+    <div class="caption" id="caption" dir="rtl" aria-live="polite"></div>
+  </main>
+  <p class="sr" id="live" aria-live="polite"></p>
+  <button class="arm" id="arm" type="button" dir="rtl">صدا را فعال کنید</button>
+  <script src="js/state.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/display.js"></script>
+</body>
+</html>

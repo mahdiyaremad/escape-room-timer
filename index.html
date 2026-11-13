@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>شمارش معکوس</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #070809;
+      color: #d5ddd4;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 20px;
+    }
+    main { width: min(560px, 100%); }
+    p { line-height: 1.7; }
+    .kicker {
+      margin: 0 0 8px;
+      letter-spacing: 0.22em;
+      color: #7e8b83;
+      font-size: 12px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-weight: 500;
+      font-size: 32px;
+      color: #efeae2;
+    }
+    .lead { margin-top: 0; color: #d5ddd4; }
+    button {
+      margin-top: 8px;
+      background: #c6f5a4;
+      color: #10140e;
+      border: 0;
+      padding: 12px 18px;
+      font: 16px/1.4 "Segoe UI", Tahoma, sans-serif;
+      cursor: pointer;
+    }
+    button:hover { background: #ddffc4; }
+    button:focus-visible { outline: 1px solid #c6f5a4; outline-offset: 3px; }
+    .note { color: #7e8b83; font-size: 14px; }
+    #status { min-height: 3em; color: #efeae2; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="kicker">BLACKROOM</p>
+    <h1>شمارش معکوس</h1>
+    <p class="lead">نمایش روی مانیتور بازیکن‌ها، کنترل روی مانیتور دیگر.</p>
+    <button id="open" type="button">باز کردن نمایش و کنترل</button>
+    <p id="status">این صفحه را باز نگه دارید. پیوند دو تصویر از اینجا می‌گذرد.</p>
+    <p class="note">پنجره نمایش را به مانیتور بازیکن بکشید و کلید F را بزنید تا تمام‌صفحه شود. یک بار روی همان تصویر کلیک کنید تا صدا فعال شود.</p>
+  </main>
+  <script>
+    (function () {
+      var CHANNEL = "countdown-link";
+      var displayWin = null;
+      var controlWin = null;
+      var seen = { display: false, control: false };
+      var openBtn = document.getElementById("open");
+      var statusEl = document.getElementById("status");
+
+      function send(win, msg) {
+        if (!win || win.closed) return;
+        try { win.postMessage(msg, "*"); } catch (err) {}
+      }
+
+      window.addEventListener("message", function (e) {
+        var msg = e.data;
+        if (!msg || msg.channel !== CHANNEL) return;
+        if (msg.from === "display" || msg.from === "control") seen[msg.from] = true;
+        paint();
+        if (msg.from === "control") send(displayWin, msg);
+        else if (msg.from === "display") send(controlWin, msg);
+      });
+
+      function paint() {
+        if (!displayWin && !controlWin) return;
+        var d = displayWin && !displayWin.closed;
+        var c = controlWin && !controlWin.closed;
+        if (!d || !c) {
+          statusEl.textContent = "یکی از پنجره‌ها بسته شده. دوباره باز کنید. این صفحه باید باز بماند.";
+          return;
+        }
+        if (seen.display && seen.control) statusEl.textContent = "پیوند برقرار است. این صفحه را نبندید.";
+        else statusEl.textContent = "پنجره‌ها باز شدند. نمایش را به مانیتور بازیکن بکشید.";
+      }
+
+      function nudge() {
+        if (!("getScreenDetails" in window)) return Promise.resolve();
+        return window.getScreenDetails().then(function (details) {
+          var current = details.currentScreen;
+          var other = null;
+          for (var i = 0; i < details.screens.length; i++) {
+            if (details.screens[i] !== current) {
+              other = details.screens[i];
+              break;
+            }
+          }
+          if (other && displayWin && !displayWin.closed) {
+            displayWin.moveTo(other.availLeft, other.availTop);
+            displayWin.resizeTo(other.availWidth, other.availHeight);
+          }
+          if (current && controlWin && !controlWin.closed) {
+            var w = Math.min(1280, Math.floor(current.availWidth * 0.84));
+            var h = Math.min(860, Math.floor(current.availHeight * 0.84));
+            var left = current.availLeft + Math.floor((current.availWidth - w) / 2);
+            var top = current.availTop + 24;
+            controlWin.moveTo(left, top);
+            controlWin.resizeTo(w, h);
+          }
+        }).catch(function () {});
+      }
+
+      openBtn.addEventListener("click", function () {
+        seen.display = false;
+        seen.control = false;
+        displayWin = window.open("display.html", "countdown-display", "width=1440,height=900");
+        controlWin = window.open("control.html", "countdown-control", "width=1280,height=860");
+        if (!displayWin || !controlWin) {
+          statusEl.textContent = "مرورگر پنجره را بست. اجازه‌ی پاپ‌آپ را بدهید و دوباره امتحان کنید.";
+          return;
+        }
+        controlWin.focus();
+        statusEl.textContent = "پنجره‌ها باز شدند. نمایش را به مانیتور بازیکن بکشید و کلید F را بزنید.";
+        nudge();
+      });
+
+      setInterval(paint, 1000);
+    })();
+  </script>
+</body>
+</html>

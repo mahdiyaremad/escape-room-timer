@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/control.css">
+</head>
+<body data-urgency="calm">
+  <div class="beam" aria-hidden="true"></div>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <strong>BLACKROOM</strong>
+        <span>CONTROL</span>
+      </div>
+      <div class="meta">
+        <span class="linkline"><i id="lamp" class="lamp"></i><span id="link">LINK  LOST</span></span>
+        <span class="status" id="status">ARMED</span>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <section class="panel camera cam-hero">
+        <div class="cam-top">
+          <p class="label">CAMERA MAIN</p>
+          <div class="cam-actions">
+            <button id="cam-live" class="chip" type="button" aria-pressed="false">LIVE</button>
+            <button id="cam-snap" class="chip" type="button" title="Take a still photo">SNAP</button>
+            <button id="cam-rec" class="chip danger" type="button" aria-pressed="false" title="Record main stream">REC</button>
+            <button id="cam-show" class="chip" type="button" title="Show camera on player display">ON DISPLAY</button>
+          </div>
+        </div>
+        <div class="cam-view">
+          <img id="cam-preview" alt="Dahua preview" hidden>
+          <div id="cam-placeholder" class="cam-placeholder">LIVE OFF</div>
+          <span id="cam-rec-badge" class="cam-rec-badge" hidden>REC <b id="cam-rec-time">00:00</b></span>
+        </div>
+        <div class="cam-bottom">
+          <p class="sfx-hint" id="cam-status">Main 1080p — LIVE را بزنید.</p>
+          <div class="cam-shots" id="cam-shots" aria-label="Recent captures"></div>
+        </div>
+      </section>
+
+      <aside class="ops">
+        <section class="stage">
+          <div class="clock" id="clock">02:00</div>
+          <div class="seal" id="seal">
+            <div class="seal-rule"></div>
+            <p class="seal-title">SESSION SEALED</p>
+            <p class="seal-sub">CHANNEL CLOSED</p>
+          </div>
+        </section>
+
+        <section class="dock">
+          <div class="panel run">
+            <p class="label">RUN</p>
+            <div class="run-grid">
+              <div class="time-set">
+                <input id="minutes" type="number" min="0" max="99" value="02" aria-label="Minutes" inputmode="numeric">
+                <span>:</span>
+                <input id="seconds" type="number" min="0" max="59" value="00" aria-label="Seconds" inputmode="numeric">
+              </div>
+              <div class="presets">
+                <button class="preset" type="button" data-sec="60">1m</button>
+                <button class="preset" type="button" data-sec="90">1.5</button>
+                <button class="preset" type="button" data-sec="120">2m</button>
+                <button class="preset" type="button" data-sec="180">3m</button>
+                <button class="preset" type="button" data-sec="300">5m</button>
+                <button class="preset" type="button" data-sec="900">15m</button>
+                <button class="preset" type="button" data-sec="1200">20m</button>
+              </div>
+              <div class="row tight">
+                <button id="transport" type="button">START</button>
+                <button id="reset" type="button">RESET</button>
+              </div>
+              <div class="row tight">
+                <input id="penalty-amount" type="number" min="1" max="1800" value="10" aria-label="Penalty seconds" inputmode="numeric">
+                <button id="penalty" class="danger" type="button">PENALTY</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel audio">
+            <p class="label">MASTER</p>
+            <div class="row gain">
+              <button id="volume-down" class="icon-btn" type="button" aria-label="Volume down">−</button>
+              <input id="volume" type="range" min="0" max="100" value="85" aria-label="Display volume">
+              <button id="volume-up" class="icon-btn" type="button" aria-label="Volume up">+</button>
+              <span id="volume-read" class="readout">85</span>
+            </div>
+            <div class="chip-row">
+              <button id="pulse" class="pulse-toggle chip" type="button" aria-pressed="true" title="Heartbeat pulse">
+                <span class="pulse-track" aria-hidden="true"><span class="pulse-knob"></span></span>
+                <span class="pulse-label">PULSE</span>
+              </button>
+              <button id="notif" class="danger chip" type="button">NOTIF</button>
+              <button id="speak" class="speak-toggle chip" type="button" aria-pressed="false" title="Talkback mic to speakers">
+                <span class="speak-dot" aria-hidden="true"></span>
+                <span>SPEAK</span>
+              </button>
+              <button id="timer-vis" class="timer-toggle chip" type="button" aria-pressed="true" title="Show or hide timer on display">TIMER</button>
+            </div>
+          </div>
+
+          <div class="panel soundbar">
+            <p class="label">SOUNDBAR</p>
+            <div class="chip-row soundbar-row" id="soundbar-list" aria-label="Preset cues"></div>
+            <p class="sfx-hint">کلیک = متن + صدا. Camera تصویر زنده داهوا را هم می‌آورد. CLEAR قطع می‌کند.</p>
+          </div>
+
+          <div class="panel beds">
+            <div class="bed-block">
+              <p class="label">CAVE</p>
+              <div class="chip-row sfx-row" id="sfx-list" aria-label="Cave beds"></div>
+              <div class="row gain">
+                <span class="sfx-vol-label">BED</span>
+                <button id="sfx-volume-down" class="icon-btn" type="button" aria-label="Bed volume down">−</button>
+                <input id="sfx-volume" type="range" min="0" max="100" value="70" aria-label="Cave bed volume">
+                <button id="sfx-volume-up" class="icon-btn" type="button" aria-label="Bed volume up">+</button>
+                <span id="sfx-volume-read" class="readout">70</span>
+                <button id="sfx-stop" class="chip" type="button">STOP</button>
+              </div>
+            </div>
+            <div class="bed-block">
+              <p class="label">HEART</p>
+              <div class="chip-row sfx-row" id="heart-list" aria-label="Heartbeat loops"></div>
+              <div class="row gain">
+                <span class="sfx-vol-label">HRT</span>
+                <button id="heart-volume-down" class="icon-btn" type="button" aria-label="Heart volume down">−</button>
+                <input id="heart-volume" type="range" min="0" max="100" value="65" aria-label="Heartbeat volume">
+                <button id="heart-volume-up" class="icon-btn" type="button" aria-label="Heart volume up">+</button>
+                <span id="heart-volume-read" class="readout">65</span>
+                <button id="heart-stop" class="chip" type="button">STOP</button>
+              </div>
+            </div>
+            <div class="bed-block pad-block">
+              <p class="label">PAD</p>
+              <div class="chip-row sfx-row" id="pad-list" aria-label="One-shot scare pads"></div>
+              <div class="row gain">
+                <span class="sfx-vol-label">HIT</span>
+                <button id="pad-stop" class="chip danger" type="button">STOP</button>
+              </div>
+            </div>
+            <p class="sfx-hint" id="sfx-hint" hidden>غار و ضربان همزمان؛ پد برای شلیک یک‌باره و بلند.</p>
+          </div>
+
+          <div class="panel msg">
+            <p class="label">MSG</p>
+            <div class="msg-grid">
+              <textarea id="caption-input" maxlength="800" rows="2" dir="rtl" placeholder="خط اول تایتل — بعدی ریزتر" aria-label="Overlay message"></textarea>
+              <div class="msg-actions">
+                <button id="caption-show" class="chip" type="button">SHOW</button>
+                <button id="caption-say" class="chip" type="button" title="Read message aloud on display">SAY</button>
+                <button id="caption-clear" class="chip" type="button">CLEAR</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel cover">
+            <p class="label">COVER</p>
+            <div class="chip-row sfx-row" id="cover-list" aria-label="Cover images"></div>
+            <div class="row cover-actions">
+              <label class="file-btn chip" for="cover-file">CHOOSE</label>
+              <input id="cover-file" type="file" accept="image/*" hidden>
+              <button id="cover-clear" class="chip" type="button">CLEAR</button>
+              <span id="cover-name" class="cover-name">بدون کاور</span>
+            </div>
+          </div>
+
+          <div class="panel cal-inline">
+            <p class="label">TRIM</p>
+            <ul class="meters">
+              <li><span>SNR</span><b id="snr">42.4</b><em>db</em></li>
+              <li><span>LAT</span><b id="lat">09</b><em>ms</em></li>
+              <li><span>JIT</span><b id="jitter">0.4</b><em>ms</em></li>
+              <li class="rate">
+                <span>RATE</span>
+                <b id="rate-readout">1.00</b>
+                <input id="rate" type="range" min="1" max="2" step="0.05" value="1" aria-label="Reference clock">
+              </li>
+            </ul>
+            <div class="trim">
+              <input id="trim" type="number" min="1" max="1800" value="15" aria-label="Clock trim seconds" inputmode="numeric">
+              <button id="trim-apply" class="chip" type="button">+TIME</button>
+            </div>
+          </div>
+        </section>
+
+        <ol class="log" id="log"></ol>
+      </aside>
+    </div>
+  </div>
+  <script src="audio/sounds.js"></script>
+  <script src="images/images.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/control.js"></script>
+</body>
+</html>
