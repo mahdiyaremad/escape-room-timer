@@ -3,14 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>شمارش معکوس</title>
+  <title>BLACKROOM Hub</title>
   <style>
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
       min-height: 100%;
-      background: #070809;
+      background:
+        radial-gradient(1200px 600px at 80% -10%, rgba(120, 40, 30, 0.28), transparent 55%),
+        radial-gradient(900px 500px at 10% 110%, rgba(40, 70, 50, 0.22), transparent 50%),
+        #070809;
       color: #d5ddd4;
       font-family: "Segoe UI", Tahoma, sans-serif;
     }
@@ -20,7 +23,7 @@
       justify-content: center;
       padding: 32px 20px;
     }
-    main { width: min(560px, 100%); }
+    main { width: min(640px, 100%); }
     p { line-height: 1.7; }
     .kicker {
       margin: 0 0 8px;
@@ -31,33 +34,84 @@
     h1 {
       margin: 0 0 12px;
       font-weight: 500;
-      font-size: 32px;
+      font-size: clamp(28px, 5vw, 36px);
       color: #efeae2;
     }
     .lead { margin-top: 0; color: #d5ddd4; }
-    button {
-      margin-top: 8px;
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 18px 0 8px;
+    }
+    button, a.btn {
       background: #c6f5a4;
       color: #10140e;
       border: 0;
       padding: 12px 18px;
       font: 16px/1.4 "Segoe UI", Tahoma, sans-serif;
       cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
     }
-    button:hover { background: #ddffc4; }
-    button:focus-visible { outline: 1px solid #c6f5a4; outline-offset: 3px; }
+    button.secondary, a.btn.secondary {
+      background: transparent;
+      color: #efeae2;
+      border: 1px solid #3a433c;
+    }
+    button:hover, a.btn:hover { filter: brightness(1.06); }
+    button:focus-visible, a.btn:focus-visible { outline: 1px solid #c6f5a4; outline-offset: 3px; }
     .note { color: #7e8b83; font-size: 14px; }
-    #status { min-height: 3em; color: #efeae2; }
+    #status { min-height: 1.5em; color: #efeae2; margin: 12px 0 4px; }
+    .urls {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border: 1px solid #2a312c;
+      background: rgba(0, 0, 0, 0.28);
+    }
+    .urls h2 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      letter-spacing: 0.16em;
+      color: #7e8b83;
+      font-weight: 600;
+    }
+    .urls code {
+      display: block;
+      direction: ltr;
+      text-align: left;
+      margin: 6px 0;
+      padding: 8px 10px;
+      background: #10140e;
+      color: #c6f5a4;
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .peers {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #b7c2b8;
+    }
+    .peers b { color: #efeae2; font-weight: 600; }
   </style>
 </head>
 <body>
   <main>
     <p class="kicker">BLACKROOM</p>
-    <h1>شمارش معکوس</h1>
-    <p class="lead">نمایش روی مانیتور بازیکن‌ها، کنترل روی مانیتور دیگر.</p>
-    <button id="open" type="button">باز کردن نمایش و کنترل</button>
-    <p id="status">این صفحه را باز نگه دارید. پیوند دو تصویر از اینجا می‌گذرد.</p>
-    <p class="note">پنجره نمایش را به مانیتور بازیکن بکشید و کلید F را بزنید تا تمام‌صفحه شود. یک بار روی همان تصویر کلیک کنید تا صدا فعال شود.</p>
+    <h1>هاب اتاق</h1>
+    <p class="lead">همه صفحات با WebSocket به سرور اصلی سینک می‌شوند. Display را روی مانیتور بازیکن باز کنید؛ Control را از گوشی یا هر IP شبکه/اینترنت لود کنید.</p>
+    <div class="actions">
+      <button id="open-both" type="button">باز کردن نمایش + کنترل</button>
+      <a class="btn secondary" id="open-display" href="display.html" target="countdown-display">فقط Display</a>
+      <a class="btn secondary" id="open-control" href="control.html" target="countdown-control">فقط Control</a>
+    </div>
+    <p id="status">در حال خواندن آدرس شبکه…</p>
+    <p class="note">روی مانیتور بازیکن Display را تمام‌صفحه کنید (`F`) و یک بار کلیک کنید تا صدا فعال شود. پین پیش‌فرض کنترل: <b dir="ltr">blackroom</b> (قابل تغییر در <code dir="ltr">room.json</code>).</p>
+    <div class="urls">
+      <h2>MULTI-DEVICE</h2>
+      <div id="url-list"></div>
+      <p class="peers" id="peers">Display: — · Control: —</p>
+    </div>
   </main>
   <script>
     (function () {
@@ -65,8 +119,10 @@
       var displayWin = null;
       var controlWin = null;
       var seen = { display: false, control: false };
-      var openBtn = document.getElementById("open");
+      var openBtn = document.getElementById("open-both");
       var statusEl = document.getElementById("status");
+      var urlList = document.getElementById("url-list");
+      var peersEl = document.getElementById("peers");
 
       function send(win, msg) {
         if (!win || win.closed) return;
@@ -87,37 +143,53 @@
         var d = displayWin && !displayWin.closed;
         var c = controlWin && !controlWin.closed;
         if (!d || !c) {
-          statusEl.textContent = "یکی از پنجره‌ها بسته شده. دوباره باز کنید. این صفحه باید باز بماند.";
+          statusEl.textContent = "یکی از پنجره‌ها بسته شده. از لینک‌های زیر دوباره باز کنید.";
           return;
         }
-        if (seen.display && seen.control) statusEl.textContent = "پیوند برقرار است. این صفحه را نبندید.";
-        else statusEl.textContent = "پنجره‌ها باز شدند. نمایش را به مانیتور بازیکن بکشید.";
+        if (seen.display && seen.control) statusEl.textContent = "پیوند محلی برقرار است. Display را به مانیتور بازیکن بکشید.";
+        else statusEl.textContent = "پنجره‌ها باز شدند.";
       }
 
-      function nudge() {
-        if (!("getScreenDetails" in window)) return Promise.resolve();
-        return window.getScreenDetails().then(function (details) {
-          var current = details.currentScreen;
-          var other = null;
-          for (var i = 0; i < details.screens.length; i++) {
-            if (details.screens[i] !== current) {
-              other = details.screens[i];
-              break;
-            }
-          }
-          if (other && displayWin && !displayWin.closed) {
-            displayWin.moveTo(other.availLeft, other.availTop);
-            displayWin.resizeTo(other.availWidth, other.availHeight);
-          }
-          if (current && controlWin && !controlWin.closed) {
-            var w = Math.min(1280, Math.floor(current.availWidth * 0.84));
-            var h = Math.min(860, Math.floor(current.availHeight * 0.84));
-            var left = current.availLeft + Math.floor((current.availWidth - w) / 2);
-            var top = current.availTop + 24;
-            controlWin.moveTo(left, top);
-            controlWin.resizeTo(w, h);
-          }
-        }).catch(function () {});
+      function originBase() {
+        return location.origin || (location.protocol + "//" + location.host);
+      }
+
+      function renderInfo(info) {
+        var base = originBase();
+        var extras = (info && info.lan) || [];
+        var html = "";
+        html += "<code>Display  " + base + "/display.html</code>";
+        html += "<code>Control  " + base + "/control.html</code>";
+        html += "<code>WebSocket  " + (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/ws</code>";
+        if (info && info.hub && info.hub.enabled) {
+          html += "<code>Hub      " + (info.hub.baseUrl || "") + "</code>";
+        }
+        if (info && info.publicUrl) {
+          var pub = String(info.publicUrl).replace(/\/$/, "");
+          html += "<code>Public   " + pub + "/control.html</code>";
+        }
+        extras.forEach(function (ip) {
+          var root = "http://" + ip + ":" + ((info && info.port) || location.port || 8765);
+          if (root === base) return;
+          html += "<code>LAN      " + root + "/control.html</code>";
+        });
+        urlList.innerHTML = html;
+        var peers = (info && info.peers) || {};
+        peersEl.innerHTML = "Display: <b>" + (peers.displayAlive ? "ONLINE" : "offline") +
+          "</b> · Control: <b>" + (peers.controlCount || 0) + "</b> · sync: <b>WS + hub</b>";
+      }
+
+      function refresh() {
+        fetch("/api/room/info")
+          .then(function (r) { return r.json(); })
+          .then(function (info) {
+            statusEl.textContent = "هاب آماده است — " + ((info && info.room) || "BLACKROOM");
+            renderInfo(info);
+          })
+          .catch(function () {
+            statusEl.textContent = "سرور پاسخ نداد. python serve.py را اجرا کنید.";
+            renderInfo({ lan: [], port: 8765, peers: {} });
+          });
       }
 
       openBtn.addEventListener("click", function () {
@@ -126,14 +198,16 @@
         displayWin = window.open("display.html", "countdown-display", "width=1440,height=900");
         controlWin = window.open("control.html", "countdown-control", "width=1280,height=860");
         if (!displayWin || !controlWin) {
-          statusEl.textContent = "مرورگر پنجره را بست. اجازه‌ی پاپ‌آپ را بدهید و دوباره امتحان کنید.";
+          statusEl.textContent = "پاپ‌آپ مسدود شد. اجازه بدهید یا لینک‌های جدا را باز کنید.";
           return;
         }
         controlWin.focus();
-        statusEl.textContent = "پنجره‌ها باز شدند. نمایش را به مانیتور بازیکن بکشید و کلید F را بزنید.";
-        nudge();
+        statusEl.textContent = "پنجره‌ها باز شدند.";
+        paint();
       });
 
+      refresh();
+      setInterval(refresh, 2000);
       setInterval(paint, 1000);
     })();
   </script>

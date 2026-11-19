@@ -1,6 +1,7 @@
 (function () {
   var C = window.Countdown;
   var state = C.recover(C.load() || C.create(), Date.now());
+  var bootRevision = state.revision;
   var presenter = C.createPresenter();
   presenter.sync(state);
 
@@ -242,20 +243,56 @@
       syncCover(true);
       return;
     }
+    if (msg.type === "speak-play" && msg.url) {
+      if (msg.clientId && link && msg.clientId === link.clientId) return;
+      audio.playCue(msg.url);
+      return;
+    }
+    if (msg.type === "tick") {
+      applyTick(msg);
+      return;
+    }
     if (msg.type === "state" && msg.state && typeof msg.state.revision === "number") {
-      if (msg.state.revision <= state.revision) return;
-      var incoming = msg.state;
-      // Keep a previously received data-URL cover if this packet stripped it.
-      if (
-        (!incoming.bgImage || !String(incoming.bgImage)) &&
-        coverCache &&
-        typeof incoming.bgId === "number" &&
-        incoming.bgId === heardBg
-      ) {
-        incoming = Object.assign({}, incoming, { bgImage: coverCache });
-      }
-      state = incoming;
+      takeState(msg.state, typeof msg.serverNow === "number" ? msg.serverNow : msg.state.serverNow, false);
+      return;
+    }
+  }
+
+  function applyTick(msg) {
+    if (!msg || typeof msg.revision !== "number" || msg.revision < state.revision) return;
+    if (msg.status === "ended" || msg.revision > state.revision) {
+      state.status = msg.status || state.status;
+      state.remainingMs = msg.status === "ended" ? 0 : (typeof msg.remainingMs === "number" ? msg.remainingMs : state.remainingMs);
+      state.endsAt = msg.status === "ended" ? null : C.toLocalEndsAt(msg.endsAt, msg.serverNow);
+      state.revision = msg.revision;
       presenter.sync(state);
+      return;
+    }
+    if (state.status === "running" && msg.revision === state.revision) {
+      if (typeof msg.remainingMs === "number") state.remainingMs = msg.remainingMs;
+      if (typeof msg.endsAt === "number") state.endsAt = C.toLocalEndsAt(msg.endsAt, msg.serverNow);
+    }
+  }
+
+  function takeState(incoming, serverNow, force) {
+    if (!incoming || typeof incoming.revision !== "number") return;
+    if (!force && incoming.revision < state.revision) return;
+    if (
+      (!incoming.bgImage || !String(incoming.bgImage)) &&
+      coverCache &&
+      typeof incoming.bgId === "number" &&
+      incoming.bgId === heardBg
+    ) {
+      incoming = Object.assign({}, incoming, { bgImage: coverCache });
+    } else {
+      incoming = Object.assign({}, incoming);
+    }
+    if (typeof incoming.endsAt === "number" && typeof serverNow === "number") {
+      incoming.endsAt = C.toLocalEndsAt(incoming.endsAt, serverNow);
+    }
+    delete incoming.serverNow;
+    state = incoming;
+    presenter.sync(state);
       audio.setVolume(state.volume);
       audio.setPulse(state.pulse !== false);
       audio.setSfxVolume(typeof state.sfxVolume === "number" ? state.sfxVolume : 0.7);
@@ -269,8 +306,6 @@
       noteHeart();
       noteHit();
       noteVoice();
-      return;
-    }
   }
 
   function notePenalty() {
@@ -599,4 +634,12 @@
     state.pulse !== false
   );
   requestAnimationFrame(frame);
+  fetch("/api/room/state")
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (state.revision !== bootRevision) return;
+      if (!data || !data.state) return;
+      takeState(data.state, data.serverNow || (data.state && data.state.serverNow), true);
+    })
+    .catch(function () {});
 })();

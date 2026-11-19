@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>BLACKROOM Remote</title>
+  <style>
+    :root {
+      --bg: #0b0d0c;
+      --panel: #141916;
+      --line: #2a322c;
+      --text: #d7ddd6;
+      --muted: #7e8b83;
+      --accent: #c6f5a4;
+      --danger: #ff7a6a;
+      --ok: #7dffa0;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); font-family: Tahoma, "Segoe UI", sans-serif; }
+    body { min-height: 100vh; padding: 12px; padding-bottom: 28px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .brand strong { display: block; letter-spacing: 0.18em; font-size: 12px; color: var(--muted); }
+    .brand span { font-size: 22px; }
+    .meta { text-align: left; direction: ltr; font-size: 12px; color: var(--muted); }
+    .meta b { color: var(--ok); }
+    .meta.bad b { color: var(--danger); }
+    .clock {
+      font-variant-numeric: tabular-nums;
+      font-size: clamp(42px, 14vw, 64px);
+      letter-spacing: 0.06em;
+      text-align: center;
+      margin: 8px 0 14px;
+      direction: ltr;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .label {
+      margin: 0 0 8px;
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      color: var(--muted);
+      text-align: left;
+      direction: ltr;
+    }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    button, .chip {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: #1b211d;
+      color: var(--text);
+      border-radius: 10px;
+      padding: 12px 10px;
+      font: 14px/1.2 Tahoma, sans-serif;
+      cursor: pointer;
+      min-height: 44px;
+    }
+    button.primary { background: var(--accent); color: #10140e; border-color: transparent; font-weight: 700; }
+    button.danger { border-color: #5a2a24; color: #ffc4bc; }
+    button.is-on, .chip.is-on { outline: 1px solid var(--accent); color: var(--accent); }
+    button:disabled { opacity: 0.45; }
+    input, textarea {
+      width: 100%;
+      background: #0f1311;
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px;
+      font: 14px Tahoma, sans-serif;
+    }
+    .time-set { display: flex; gap: 6px; align-items: center; direction: ltr; }
+    .time-set input { width: 64px; text-align: center; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chips button { flex: 1 1 calc(33% - 6px); min-width: 90px; }
+    .hint { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .log { margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); direction: ltr; text-align: left; }
+    .log li { padding: 3px 0; border-bottom: 1px solid #1c221e; }
+    .cfg { display: grid; gap: 8px; }
+    .cfg label { font-size: 12px; color: var(--muted); display: grid; gap: 4px; text-align: left; direction: ltr; }
+    .cam-view { background: #000; border-radius: 10px; min-height: 140px; display: grid; place-items: center; overflow: hidden; margin-bottom: 8px; }
+    .cam-view img { width: 100%; max-height: 240px; object-fit: contain; display: block; background: #000; }
+    .shots { display: flex; gap: 6px; overflow: auto; margin-top: 8px; }
+    .shots img { width: 72px; height: 52px; object-fit: cover; border-radius: 6px; background: #000; }
+    audio { width: 100%; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <strong>BLACKROOM</strong>
+      <span>REMOTE</span>
+    </div>
+    <div class="meta" id="meta"><b id="link">در حال اتصال</b><div id="ntfy-detail">5.57.39.218:6985</div><div id="status">IDLE</div></div>
+  </header>
+
+  <div class="clock" id="clock">02:00</div>
+
+  <section class="panel">
+    <p class="label">HUB</p>
+    <p class="hint" id="ntfy-hint">اتصال مستقیم به 5.57.39.218:6985. این فایل موقع دانلود، آدرس هاب، کلید و زمان باقی‌مانده را داخل خودش دارد. اگر room.json عوض شد، دوباره REMOTE HTML را دانلود کن.</p>
+  </section>
+
+  <section class="panel">
+    <p class="label">CAMERA</p>
+    <div class="cam-view"><img id="cam-preview" alt="camera" hidden></div>
+    <div class="grid2">
+      <button type="button" id="cam-live">LIVE</button>
+      <button type="button" id="cam-snap">SNAP</button>
+    </div>
+    <div class="shots" id="cam-shots"></div>
+    <p class="hint">LIVE استریم دوربین را از هاب می‌گیرد. SNAP یک عکس تازه از دوربین اتاق می‌گیرد.</p>
+  </section>
+
+  <section class="panel">
+    <p class="label">SPEAK</p>
+    <div class="grid2">
+      <button type="button" id="speak-rec">REC</button>
+      <button type="button" id="speak-play">PLAY</button>
+    </div>
+    <audio id="speak-out" controls></audio>
+    <p class="hint">ضبط و پخش داخل همین پنل است. PLAY همان کلیپ را برای مانیتور اتاق هم می‌فرستد.</p>
+  </section>
+
+  <section class="panel">
+    <p class="label">RUN</p>
+    <div class="row" style="margin-bottom:8px">
+      <div class="time-set">
+        <input id="minutes" type="number" min="0" max="99" value="2">
+        <span>:</span>
+        <input id="seconds" type="number" min="0" max="59" value="0">
+      </div>
+      <button type="button" id="arm" class="chip">ARM</button>
+    </div>
+    <div class="chips" id="presets">
+      <button type="button" data-sec="60">1m</button>
+      <button type="button" data-sec="120">2m</button>
+      <button type="button" data-sec="180">3m</button>
+      <button type="button" data-sec="300">5m</button>
+      <button type="button" data-sec="900">15m</button>
+      <button type="button" data-sec="1200">20m</button>
+    </div>
+    <div class="grid2" style="margin-top:8px">
+      <button type="button" id="transport" class="primary">START</button>
+      <button type="button" id="reset">RESET</button>
+      <input id="penalty-amount" type="number" min="1" max="1800" value="10">
+      <button type="button" id="penalty" class="danger">PENALTY</button>
+      <input id="trim" type="number" min="1" max="1800" value="15">
+      <button type="button" id="trim-apply">+TIME</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <p class="label">MASTER</p>
+    <div class="row">
+      <input id="volume" type="range" min="0" max="100" value="85" style="flex:1">
+      <span id="volume-read" style="direction:ltr;min-width:2em">85</span>
+    </div>
+    <div class="chips" style="margin-top:8px">
+      <button type="button" id="pulse" class="is-on" aria-pressed="true">PULSE</button>
+      <button type="button" id="notif" class="danger">NOTIF</button>
+      <button type="button" id="timer-vis" class="is-on" aria-pressed="true">TIMER</button>
+      <button type="button" id="cam-show" aria-pressed="false">CAM ON DISPLAY</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <p class="label">SOUNDBAR</p>
+    <div class="chips" id="soundbar"></div>
+    <p class="hint">متن و صدا روی Display پخش می‌شود. CAM ON DISPLAY تصویر دوربین را روی مانیتور اتاق می‌آورد.</p>
+  </section>
+
+  <section class="panel">
+    <p class="label">CAVE</p>
+    <div class="chips" id="beds"></div>
+    <div class="row" style="margin-top:8px">
+      <input id="sfx-volume" type="range" min="0" max="100" value="70" style="flex:1">
+      <button type="button" id="sfx-stop">STOP</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <p class="label">HEART</p>
+    <div class="chips" id="hearts"></div>
+    <div class="row" style="margin-top:8px">
+      <input id="heart-volume" type="range" min="0" max="100" value="65" style="flex:1">
+      <button type="button" id="heart-stop">STOP</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <p class="label">PAD</p>
+    <div class="chips" id="pads"></div>
+    <div class="row" style="margin-top:8px">
+      <button type="button" id="pad-stop" class="danger" style="flex:1">STOP HIT</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <p class="label">MSG</p>
+    <textarea id="caption" rows="3" maxlength="800" placeholder="متن روی مانیتور"></textarea>
+    <div class="grid2" style="margin-top:8px">
+      <button type="button" id="caption-show" class="primary">SHOW</button>
+      <button type="button" id="caption-clear">CLEAR</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <p class="label">LOG</p>
+    <ol class="log" id="log"></ol>
+  </section>
+
+  <script>
+  window.REMOTE_BOOT = window.REMOTE_BOOT || null;
+  (function () {
+    var CHANNEL = "countdown-link";
+    var KEY = "blackroom-remote-v1";
+    var clientId = "";
+    var hubSock = null;
+    var hubOk = null;
+    var seenIds = {};
+    var seenOrder = [];
+    var camLive = false;
+    var speakRecorder = null;
+    var speakChunks = [];
+    var speakBlob = null;
+    var speakRemoteUrl = "";
+    var reconnectTimer = null;
+    var state = createState();
+    var entries = [];
+
+    var SOUNDS = [
+      { id: "cave", file: "sounds.mp3", label: "CAVE", group: "bed" },
+      { id: "cave-2", file: "cave-2.mp3", label: "CAVE 2", group: "bed" },
+      { id: "cave-3", file: "cave-3.mp3", label: "CAVE 3", group: "bed" },
+      { id: "horror-amb", file: "horror-amb.mp3", label: "HORROR AMB", group: "bed" },
+      { id: "dread", file: "dread.mp3", label: "DREAD", group: "bed" },
+      { id: "heart-slow", file: "slow.mp3", label: "HEART SLOW", group: "heart" },
+      { id: "heart-fast", file: "fast.mp3", label: "HEART FAST", group: "heart" },
+      { id: "scream", file: "scream.mp3", label: "SCREAM", group: "pad" },
+      { id: "break", file: "break.mp3", label: "BREAK", group: "pad" },
+      { id: "chainsaw", file: "chainsaw.mp3", label: "CHAINSAW", group: "pad" },
+      { id: "jumpscare", file: "jumpscare.mp3", label: "JUMPSCARE", group: "pad" },
+      { id: "whisper", file: "whisper.mp3", label: "WHISPER", group: "pad" },
+      { id: "creak", file: "creak.mp3", label: "CREAK", group: "pad" },
+      { id: "wail", file: "wail.mp3", label: "WAIL", group: "pad" }
+    ];
+
+    var SOUNDBAR = [
+      { id: "entrance", label: "Entrance", voice: "voice-entrance.mp3", text: "لابی\nشما به لابی رسیده‌اید. برای نخستین گام، درب گاراژ را باز کنید." },
+      { id: "full-access", label: "Full Access", voice: "voice-full-access.mp3", text: "لابی\nشما به تمامی بخش‌های تونل مخفی فرخ‌خان دسترسی یافته‌اید؛ جایی که فرخ‌خان نمی‌خواهد شما ببینید." },
+      { id: "rules", label: "Rules", voice: "voice-rules.mp3", text: "قوانین\nتوجه کنید: همواره روی مانیتور یک راهنمایی برای شما قرار داده شده است. اگر مرحله‌ای را نمی‌توانید پشت سر بگذارید، به مانیتور دقت کنید. همچنین با آزاد کردن دوچرخه و رکاب زدن می‌توانید روشنایی تولید کنید. برای شروع، دو نفر معمای گاراژ را حل کنند و دو نفر معمای گلخانه را؛ بقیه می‌توانند به اتاق اسناد بروند و اسناد مهم را کشف کنند. از این لحظه ده دقیقه زمان دارید." },
+      { id: "camera", label: "Camera", voice: "voice-camera.mp3", text: "دوربین\nهمگی به جلوی دوربین بیایید و به مانیتور نگاه کنید.", camera: true },
+      { id: "win", label: "Win", voice: "voice-win.mp3", text: "شما اسناد مهم را کشف کردید.\nبه کارهای شوم فرخ خان پی بردید\nهمگی به سمت چراغ سبز رنگ درب گاراژ حرکت کنید", win: true }
+    ];
+
+    var cfg = loadCfg();
+    var hubDetail = "";
+    if (window.REMOTE_BOOT && window.REMOTE_BOOT.state && typeof window.REMOTE_BOOT.state === "object") {
+      state = Object.assign(createState(), window.REMOTE_BOOT.state);
+      if (typeof state.endsAt === "number" && typeof window.REMOTE_BOOT.serverNow === "number") {
+        state.endsAt = state.endsAt - (window.REMOTE_BOOT.serverNow - Date.now());
+      }
+      delete state.serverNow;
+    }
+
+    try {
+      clientId = localStorage.getItem("countdown-remote-id") || "";
+      if (!clientId) {
+        clientId = "remote-" + Math.random().toString(36).slice(2, 10);
+        localStorage.setItem("countdown-remote-id", clientId);
+      }
+    } catch (err) {
+      clientId = "remote-" + Date.now();
+    }
+
+    function createState() {
+      return {
+        remainingMs: 120000, durationMs: 120000, status: "idle", msPerTick: 1000, endsAt: null,
+        penaltyUntil: 0, penaltyId: 0, presentation: null, revision: 0, volume: 0.85, pulse: true,
+        caption: "", captionId: 0, voiceFile: "", voiceText: "", voiceId: 0, timerVisible: true,
+        notifId: 0, sfxFile: "", sfxId: 0, sfxPlaying: false, sfxVolume: 0.7,
+        heartFile: "", heartId: 0, heartPlaying: false, heartVolume: 0.65,
+        hitFile: "", hitId: 0, bgImage: "", bgId: 0, winMode: false, camera: false,
+        speak: false, speakId: 0, updatedAt: 0
+      };
+    }
+
+    function clone(s) { return JSON.parse(JSON.stringify(s)); }
+    function clamp(n, a, b) { return Math.min(b, Math.max(a, n)); }
+
+    function computeRemaining(s, now) {
+      if (s.status === "running" && typeof s.endsAt === "number") {
+        var per = s.msPerTick > 0 ? s.msPerTick : 1000;
+        return Math.max(0, ((s.endsAt - now) / per) * 1000);
+      }
+      return Math.max(0, s.remainingMs || 0);
+    }
+
+    function formatClock(ms) {
+      var sec = !(ms > 0) ? 0 : Math.ceil(ms / 1000 - 1e-9);
+      var m = Math.floor(sec / 60);
+      var s = sec % 60;
+      return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    }
+
+    function audioPath(file) {
+      return "audio/" + String(file || "").replace(/^\/+/, "");
+    }
+
+    function loadCfg() {
+      var boot = window.REMOTE_BOOT || {};
+      return {
+        baseUrl: String(boot.baseUrl || "http://5.57.39.218:6985").replace(/\/$/, ""),
+        key: boot.key || "brhub-7k3m9qx2-6985",
+        pin: boot.pin || ""
+      };
+    }
+
+    function makeId() {
+      return clientId + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+    }
+
+    function rememberId(id) {
+      if (!id) return false;
+      if (seenIds[id]) return true;
+      seenIds[id] = 1;
+      seenOrder.push(id);
+      if (seenOrder.length > 400) {
+        seenOrder.splice(0, 150).forEach(function (key) { delete seenIds[key]; });
+      }
+      return false;
+    }
+
+    function hubSocketUrl() {
+      var base = String(cfg.baseUrl || "").replace(/\/$/, "");
+      var wsBase = base.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
+      return wsBase + "/ws?role=remote&clientId=" + encodeURIComponent(clientId) + "&key=" + encodeURIComponent(cfg.key || "");
+    }
+
+    function slimState(full) {
+      var copy = clone(full);
+      if (copy.bgImage && String(copy.bgImage).indexOf("data:") === 0) copy.bgImage = "";
+      return copy;
+    }
+
+    function markHub(ok, detail) {
+      hubOk = !!ok;
+      hubDetail = detail || cfg.baseUrl.replace(/^https?:\/\//, "");
+      paintLink();
+    }
+
+    function sendRaw(msg) {
+      if (!hubSock || hubSock.readyState !== 1) {
+        markHub(false, "سوکت هاب بسته است");
+        return false;
+      }
+      try {
+        hubSock.send(JSON.stringify(msg));
+        return true;
+      } catch (err) {
+        markHub(false, "ارسال ناموفق");
+        return false;
+      }
+    }
+
+    function emit(type, extra) {
+      var msg = Object.assign({
+        channel: CHANNEL,
+        from: "control",
+        clientId: clientId,
+        clientNow: Date.now(),
+        id: makeId(),
+        type: type,
+        pin: cfg.pin || undefined
+      }, extra || {});
+      if (type === "state") msg.state = slimState(state);
+      sendRaw(msg);
+    }
+
+    function shiftEnds(endsAt, serverNow) {
+      if (typeof endsAt !== "number" || typeof serverNow !== "number") return endsAt;
+      return endsAt - (serverNow - Date.now());
+    }
+
+    function applyNetState(incoming, serverNow) {
+      if (!incoming || typeof incoming.revision !== "number") return;
+      if (incoming.revision < state.revision) return;
+      var next = Object.assign(createState(), incoming);
+      var stamp = typeof serverNow === "number" ? serverNow : next.serverNow;
+      if (typeof next.endsAt === "number" && typeof stamp === "number") {
+        next.endsAt = shiftEnds(next.endsAt, stamp);
+      }
+      delete next.serverNow;
+      state = next;
+      paint();
+    }
+
+    function applyTick(msg) {
+      if (!msg || typeof msg.revision !== "number" || msg.revision < state.revision) return;
+      if (msg.status === "ended" || msg.revision > state.revision) {
+        state.status = msg.status || state.status;
+        state.remainingMs = msg.status === "ended" ? 0 : (typeof msg.remainingMs === "number" ? msg.remainingMs : state.remainingMs);
+        state.endsAt = msg.status === "ended" ? null : shiftEnds(msg.endsAt, msg.serverNow);
+        state.revision = msg.revision;
+        paint();
+        return;
+      }
+      if (state.status === "running" && msg.revision === state.revision) {
+        if (typeof msg.remainingMs === "number") state.remainingMs = msg.remainingMs;
+        if (typeof msg.endsAt === "number") state.endsAt = shiftEnds(msg.endsAt, msg.serverNow);
+        paint();
+      }
+    }
+
+    function scheduleReconnect() {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connectHub, 1500);
+    }
+
+    function addShot(url) {
+      if (!url) return;
+      var box = document.getElementById("cam-shots");
+      if (!box) return;
+      var img = document.createElement("img");
+      img.src = url;
+      img.alt = "snap";
+      box.insertBefore(img, box.firstChild);
+    }
+
+    function playSpeakUrl(url) {
+      var el = document.getElementById("speak-out");
+      if (!el || !url) return;
+      el.src = url;
+      var start = el.play();
+      if (start && start.catch) start.catch(function () {});
+    }
+
+    function handleMsg(msg) {
+      if (!msg || msg.channel !== CHANNEL) return;
+      if (msg.id && rememberId(msg.id)) return;
+      if (msg.type === "tick") {
+        applyTick(msg);
+        return;
+      }
+      if (msg.type === "state" && msg.state) {
+        var stamp = typeof msg.serverNow === "number" ? msg.serverNow : msg.state.serverNow;
+        var ownRaw = msg.clientId === clientId && typeof stamp !== "number";
+        if (ownRaw) return;
+        applyNetState(msg.state, stamp);
+        return;
+      }
+      if (msg.type === "cam-photo" && msg.url) {
+        addShot(msg.url);
+        pushLog("photo");
+        return;
+      }
+      if (msg.type === "speak-clip" && msg.url && msg.clientId === clientId) {
+        speakRemoteUrl = msg.url;
+        return;
+      }
+      if (msg.type === "speak-play" && msg.url && msg.clientId !== clientId) {
+        playSpeakUrl(msg.url);
+        pushLog("speak play");
+      }
+    }
+
+    function connectHub() {
+      if (hubSock) {
+        try { hubSock.onclose = null; hubSock.close(); } catch (err) {}
+        hubSock = null;
+      }
+      if (!cfg.baseUrl || !cfg.key || typeof WebSocket === "undefined") {
+        markHub(false, "تنظیم هاب داخل فایل نیست");
+        return;
+      }
+      var sock;
+      try {
+        sock = new WebSocket(hubSocketUrl());
+      } catch (err) {
+        markHub(false, "خطای اتصال");
+        scheduleReconnect();
+        return;
+      }
+      hubSock = sock;
+      sock.onopen = function () {
+        markHub(true, cfg.baseUrl.replace(/^https?:\/\//, ""));
+        emit("hello");
+        pushLog("hub connected");
+      };
+      sock.onmessage = function (e) {
+        var msg;
+        try { msg = JSON.parse(e.data); } catch (err) { return; }
+        handleMsg(msg);
+      };
+      sock.onerror = function () {
+        markHub(false, "خطای اتصال");
+      };
+      sock.onclose = function () {
+        if (hubSock !== sock) return;
+        hubSock = null;
+        markHub(false, "قطع شد");
+        pushLog("hub disconnected");
+        scheduleReconnect();
+      };
+    }
+
+    function publish(mutator, logLine) {
+      var now = Date.now();
+      var draft = clone(state);
+      var next = mutator(draft, now);
+      if (!next) return false;
+      next.revision = state.revision + 1;
+      next.updatedAt = now;
+      state = next;
+      emit("state");
+      if (logLine) pushLog(logLine);
+      paint();
+      return true;
+    }
+
+    function pushLog(line) {
+      var d = new Date();
+      function p(n) { return String(n).padStart(2, "0"); }
+      entries.unshift(p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds()) + "  " + line);
+      if (entries.length > 10) entries.pop();
+      var logEl = document.getElementById("log");
+      logEl.replaceChildren();
+      entries.forEach(function (t) {
+        var li = document.createElement("li");
+        li.textContent = t;
+        logEl.appendChild(li);
+      });
+    }
+
+    function paintLink() {
+      var meta = document.getElementById("meta");
+      var link = document.getElementById("link");
+      var detail = document.getElementById("ntfy-detail");
+      var pending = hubOk == null;
+      meta.classList.toggle("bad", hubOk === false);
+      if (pending) link.textContent = "در حال اتصال";
+      else if (hubOk) link.textContent = "اتصال هاب موفق";
+      else link.textContent = "اتصال هاب ناموفق";
+      if (detail) detail.textContent = hubDetail || cfg.baseUrl.replace(/^https?:\/\//, "") || "";
+    }
+
+    function paint() {
+      var now = Date.now();
+      var rem = computeRemaining(state, now);
+      document.getElementById("clock").textContent = formatClock(rem);
+      var st = document.getElementById("status");
+      if (state.status === "ended") st.textContent = "SEALED";
+      else if (state.penaltyUntil > now) st.textContent = "PENALTY";
+      else st.textContent = String(state.status || "idle").toUpperCase();
+      var transport = document.getElementById("transport");
+      if (state.status === "running") transport.textContent = "HOLD";
+      else if (state.status === "paused") transport.textContent = "RESUME";
+      else transport.textContent = "START";
+      document.getElementById("volume").value = String(Math.round((state.volume || 0) * 100));
+      document.getElementById("volume-read").textContent = String(Math.round((state.volume || 0) * 100));
+      document.getElementById("pulse").classList.toggle("is-on", state.pulse !== false);
+      document.getElementById("timer-vis").classList.toggle("is-on", state.timerVisible !== false);
+      document.getElementById("cam-show").classList.toggle("is-on", !!state.camera);
+      document.getElementById("sfx-volume").value = String(Math.round((state.sfxVolume != null ? state.sfxVolume : 0.7) * 100));
+      document.getElementById("heart-volume").value = String(Math.round((state.heartVolume != null ? state.heartVolume : 0.65) * 100));
+      paintLink();
+    }
+
+    function start(s, now) {
+      if (s.status === "running") return null;
+      if (s.status !== "paused") s.remainingMs = s.durationMs;
+      if (!(s.remainingMs > 0)) return null;
+      s.status = "running";
+      s.endsAt = now + (s.remainingMs / 1000) * s.msPerTick;
+      s.presentation = null;
+      s.penaltyUntil = 0;
+      return s;
+    }
+    function pause(s, now) {
+      if (s.status !== "running") return null;
+      s.remainingMs = computeRemaining(s, now);
+      s.endsAt = null;
+      s.status = "paused";
+      s.presentation = null;
+      return s;
+    }
+    function resume(s, now) {
+      if (s.status !== "paused" || !(s.remainingMs > 0)) return null;
+      s.status = "running";
+      s.endsAt = now + (s.remainingMs / 1000) * s.msPerTick;
+      s.presentation = null;
+      return s;
+    }
+    function reset(s) {
+      s.remainingMs = s.durationMs;
+      s.endsAt = null;
+      s.status = "idle";
+      s.penaltyUntil = 0;
+      s.penaltyId = 0;
+      s.presentation = null;
+      return s;
+    }
+    function setDuration(s, ms) {
+      if (s.status === "running" || !(ms > 0)) return null;
+      s.durationMs = ms;
+      if (s.status === "ended") return s;
+      s.remainingMs = ms;
+      s.status = "idle";
+      s.endsAt = null;
+      s.presentation = null;
+      s.penaltyUntil = 0;
+      return s;
+    }
+    function penalty(s, subtractMs, now) {
+      if (s.status === "ended" || !(subtractMs > 0)) return null;
+      var current = computeRemaining(s, now);
+      if (!(current > 0)) return null;
+      var nextMs = Math.max(0, current - subtractMs);
+      var id = s.revision + 1;
+      s.presentation = { id: id, kind: "penalty", fromMs: current, toMs: nextMs, dur: 680, at: now };
+      s.penaltyUntil = now + 3000;
+      s.penaltyId = id;
+      s.remainingMs = nextMs;
+      if (s.status === "idle") s.durationMs = Math.max(nextMs, 0);
+      if (nextMs <= 0) { s.status = "ended"; s.remainingMs = 0; s.endsAt = null; return s; }
+      if (s.status === "running") s.endsAt = now + (nextMs / 1000) * s.msPerTick;
+      return s;
+    }
+    function trim(s, addMs, now) {
+      if (s.status === "ended" || !(addMs > 0)) return null;
+      var current = computeRemaining(s, now);
+      var nextMs = current + addMs;
+      s.presentation = { id: s.revision + 1, kind: "grace", fromMs: current, toMs: nextMs, dur: 520, at: now };
+      s.remainingMs = nextMs;
+      if (s.status === "running") s.endsAt = now + (nextMs / 1000) * s.msPerTick;
+      if (s.status === "idle") s.durationMs = nextMs;
+      return s;
+    }
+
+    function fillGroup(el, group) {
+      el.replaceChildren();
+      SOUNDS.filter(function (x) { return x.group === group; }).forEach(function (item) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = item.label;
+        btn.addEventListener("click", function () {
+          var path = audioPath(item.file);
+          if (group === "pad") {
+            publish(function (d) { d.hitFile = path; d.hitId = (d.hitId || 0) + 1; return d; }, "pad " + item.id);
+            return;
+          }
+          if (group === "heart") {
+            publish(function (d) {
+              if (d.heartPlaying && d.heartFile === path) { d.heartPlaying = false; d.heartFile = ""; d.heartId = (d.heartId || 0) + 1; return d; }
+              d.heartFile = path; d.heartPlaying = true; d.heartId = (d.heartId || 0) + 1; return d;
+            }, "heart " + item.id);
+            return;
+          }
+          publish(function (d) {
+            if (d.sfxPlaying && d.sfxFile === path) { d.sfxPlaying = false; d.sfxFile = ""; d.sfxId = (d.sfxId || 0) + 1; return d; }
+            d.sfxFile = path; d.sfxPlaying = true; d.sfxId = (d.sfxId || 0) + 1; return d;
+          }, "cave " + item.id);
+        });
+        el.appendChild(btn);
+      });
+    }
+
+    function fillSoundbar() {
+      var el = document.getElementById("soundbar");
+      el.replaceChildren();
+      SOUNDBAR.forEach(function (item) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = item.label;
+        btn.addEventListener("click", function () {
+          document.getElementById("caption").value = item.text;
+          publish(function (d) {
+            d.caption = item.text;
+            d.captionId = (d.captionId || 0) + 1;
+            d.voiceFile = audioPath(item.voice);
+            d.voiceText = "";
+            d.voiceId = (d.voiceId || 0) + 1;
+            if (item.camera) d.camera = true;
+            if (item.win) d.winMode = true;
+            if (item.id === "win") d.timerVisible = false;
+            return d;
+          }, "soundbar " + item.id);
+        });
+        el.appendChild(btn);
+      });
+      var clearBtn = document.createElement("button");
+      clearBtn.type = "button";
+      clearBtn.textContent = "CLEAR";
+      clearBtn.className = "danger";
+      clearBtn.addEventListener("click", function () {
+        publish(function (d) {
+          d.caption = ""; d.captionId = (d.captionId || 0) + 1;
+          d.voiceFile = ""; d.voiceText = ""; d.voiceId = (d.voiceId || 0) + 1;
+          d.camera = false; d.winMode = false; d.timerVisible = true;
+          return d;
+        }, "soundbar cleared");
+      });
+      el.appendChild(clearBtn);
+    }
+
+    document.getElementById("transport").addEventListener("click", function () {
+      if (state.status === "running") publish(function (d, now) { return pause(d, now); }, "hold");
+      else if (state.status === "paused") publish(function (d, now) { return resume(d, now); }, "resume");
+      else publish(function (d, now) { return start(d, now); }, "start");
+    });
+    document.getElementById("reset").addEventListener("click", function () {
+      publish(function (d) { return reset(d); }, "reset");
+    });
+    document.getElementById("arm").addEventListener("click", function () {
+      var m = parseInt(document.getElementById("minutes").value, 10) || 0;
+      var s = parseInt(document.getElementById("seconds").value, 10) || 0;
+      var ms = (m * 60 + s) * 1000;
+      publish(function (d) { return setDuration(d, ms); }, "armed");
+    });
+    document.getElementById("presets").addEventListener("click", function (e) {
+      var btn = e.target.closest("button[data-sec]");
+      if (!btn) return;
+      var sec = Number(btn.getAttribute("data-sec"));
+      document.getElementById("minutes").value = String(Math.floor(sec / 60));
+      document.getElementById("seconds").value = String(sec % 60);
+      publish(function (d) { return setDuration(d, sec * 1000); }, "preset " + sec + "s");
+    });
+    document.getElementById("penalty").addEventListener("click", function () {
+      var sec = parseInt(document.getElementById("penalty-amount").value, 10) || 10;
+      publish(function (d, now) { return penalty(d, sec * 1000, now); }, "penalty");
+    });
+    document.getElementById("trim-apply").addEventListener("click", function () {
+      var sec = parseInt(document.getElementById("trim").value, 10) || 15;
+      publish(function (d, now) { return trim(d, sec * 1000, now); }, "trim +" + sec);
+    });
+    document.getElementById("volume").addEventListener("input", function () {
+      var v = Number(this.value) / 100;
+      document.getElementById("volume-read").textContent = String(Math.round(v * 100));
+      publish(function (d) { d.volume = clamp(v, 0, 1); return d; });
+    });
+    document.getElementById("pulse").addEventListener("click", function () {
+      publish(function (d) { d.pulse = !d.pulse; return d; }, "pulse");
+    });
+    document.getElementById("notif").addEventListener("click", function () {
+      publish(function (d) { d.notifId = (d.notifId || 0) + 1; return d; }, "notif");
+    });
+    document.getElementById("timer-vis").addEventListener("click", function () {
+      publish(function (d) { d.timerVisible = !d.timerVisible; return d; }, "timer");
+    });
+    document.getElementById("cam-show").addEventListener("click", function () {
+      publish(function (d) { d.camera = !d.camera; return d; }, "camera");
+    });
+    document.getElementById("sfx-volume").addEventListener("input", function () {
+      var v = Number(this.value) / 100;
+      publish(function (d) { d.sfxVolume = clamp(v, 0, 1); return d; });
+    });
+    document.getElementById("heart-volume").addEventListener("input", function () {
+      var v = Number(this.value) / 100;
+      publish(function (d) { d.heartVolume = clamp(v, 0, 1); return d; });
+    });
+    document.getElementById("sfx-stop").addEventListener("click", function () {
+      publish(function (d) { d.sfxPlaying = false; d.sfxFile = ""; d.sfxId = (d.sfxId || 0) + 1; return d; }, "cave stop");
+    });
+    document.getElementById("heart-stop").addEventListener("click", function () {
+      publish(function (d) { d.heartPlaying = false; d.heartFile = ""; d.heartId = (d.heartId || 0) + 1; return d; }, "heart stop");
+    });
+    document.getElementById("pad-stop").addEventListener("click", function () {
+      publish(function (d) { d.hitFile = ""; d.hitId = (d.hitId || 0) + 1; return d; }, "pad stop");
+    });
+    document.getElementById("caption-show").addEventListener("click", function () {
+      var text = document.getElementById("caption").value || "";
+      publish(function (d) { d.caption = text; d.captionId = (d.captionId || 0) + 1; return d; }, "caption");
+    });
+    document.getElementById("caption-clear").addEventListener("click", function () {
+      document.getElementById("caption").value = "";
+      publish(function (d) {
+        d.caption = ""; d.captionId = (d.captionId || 0) + 1;
+        d.voiceFile = ""; d.voiceText = ""; d.voiceId = (d.voiceId || 0) + 1;
+        return d;
+      }, "caption clear");
+    });
+
+    function speakMime() {
+      var list = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+      for (var i = 0; i < list.length; i++) {
+        if (MediaRecorder.isTypeSupported(list[i])) return list[i];
+      }
+      return "";
+    }
+
+    function uploadSpeak(blob) {
+      if (!blob || !cfg.baseUrl) return Promise.resolve(null);
+      return fetch(cfg.baseUrl + "/media?key=" + encodeURIComponent(cfg.key || ""), {
+        method: "POST",
+        headers: {
+          "Content-Type": (blob.type || "application/octet-stream").split(";")[0],
+          "X-Kind": "speak"
+        },
+        body: blob,
+        mode: "cors"
+      }).then(function (res) {
+        if (!res.ok) throw new Error("upload");
+        return res.json();
+      }).then(function (data) {
+        speakRemoteUrl = (data && data.url) || speakRemoteUrl;
+        if (speakRemoteUrl) pushLog("speak saved");
+        return data;
+      }).catch(function () {
+        pushLog("speak upload failed");
+        return null;
+      });
+    }
+
+    document.getElementById("cam-live").addEventListener("click", function () {
+      camLive = !camLive;
+      var img = document.getElementById("cam-preview");
+      this.classList.toggle("is-on", camLive);
+      emit("cam-watch", { on: camLive });
+      if (!img) return;
+      if (camLive) {
+        img.hidden = false;
+        img.src = cfg.baseUrl + "/cam.mjpg?key=" + encodeURIComponent(cfg.key || "");
+      } else {
+        img.removeAttribute("src");
+        img.hidden = true;
+      }
+    });
+    document.getElementById("cam-snap").addEventListener("click", function () {
+      emit("cam-snap");
+      pushLog("snap requested");
+    });
+    document.getElementById("speak-rec").addEventListener("click", function () {
+      var btn = this;
+      if (speakRecorder) {
+        try { speakRecorder.stop(); } catch (err) {}
+        return;
+      }
+      if (!navigator.mediaDevices || !window.MediaRecorder) {
+        pushLog("mic unsupported");
+        return;
+      }
+      var mime = speakMime();
+      navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(function (stream) {
+        var rec;
+        try {
+          rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        } catch (err) {
+          stream.getTracks().forEach(function (track) { track.stop(); });
+          pushLog("mic recorder failed");
+          return;
+        }
+        speakChunks = [];
+        speakRecorder = rec;
+        rec.ondataavailable = function (e) {
+          if (e.data && e.data.size) speakChunks.push(e.data);
+        };
+        rec.onstop = function () {
+          stream.getTracks().forEach(function (track) { track.stop(); });
+          speakRecorder = null;
+          btn.classList.remove("is-on");
+          btn.textContent = "REC";
+          var blob = new Blob(speakChunks, { type: (mime || "audio/webm").split(";")[0] });
+          speakChunks = [];
+          if (!blob.size) {
+            pushLog("speak empty");
+            return;
+          }
+          speakBlob = blob;
+          var localUrl = URL.createObjectURL(blob);
+          var audioEl = document.getElementById("speak-out");
+          if (audioEl) audioEl.src = localUrl;
+          uploadSpeak(blob);
+          pushLog("speak recorded");
+        };
+        rec.start();
+        btn.classList.add("is-on");
+        btn.textContent = "STOP";
+        pushLog("speak rec");
+      }).catch(function () {
+        pushLog("mic denied");
+      });
+    });
+    document.getElementById("speak-play").addEventListener("click", function () {
+      var audioEl = document.getElementById("speak-out");
+      if (speakBlob && audioEl && !audioEl.src) audioEl.src = URL.createObjectURL(speakBlob);
+      if (audioEl && audioEl.src) {
+        var start = audioEl.play();
+        if (start && start.catch) start.catch(function () {});
+      }
+      function announce() {
+        if (!speakRemoteUrl) return;
+        emit("speak-play", { url: speakRemoteUrl, mime: (speakBlob && speakBlob.type) || "" });
+        pushLog("speak play");
+      }
+      if (speakRemoteUrl) announce();
+      else if (speakBlob) uploadSpeak(speakBlob).then(announce);
+      else pushLog("speak empty");
+    });
+
+    fillGroup(document.getElementById("beds"), "bed");
+    fillGroup(document.getElementById("hearts"), "heart");
+    fillGroup(document.getElementById("pads"), "pad");
+    fillSoundbar();
+    paint();
+    connectHub();
+    setInterval(paint, 250);
+    pushLog("remote ready");
+  })();
+  </script>
+</body>
+</html>

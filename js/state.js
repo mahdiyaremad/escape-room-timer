@@ -81,6 +81,12 @@
     return Math.max(0, state.remainingMs || 0);
   }
 
+  // endsAt from the server is on the server clock. Shift it onto this device.
+  function toLocalEndsAt(endsAt, serverNow) {
+    if (typeof endsAt !== "number" || typeof serverNow !== "number") return endsAt;
+    return endsAt - (serverNow - Date.now());
+  }
+
   function wholeSeconds(ms) {
     if (!(ms > 0)) return 0;
     return Math.ceil(ms / 1000 - 1e-9);
@@ -167,16 +173,62 @@
     return { sync: sync, value: value };
   }
 
-  // file:// gives each document its own origin, so BroadcastChannel and
-  // localStorage do not cross the two windows. The launcher relays postMessage.
+  // Local WebSocket on the LAN server. Internet sync is the IP hub (not ntfy).
   function createLink(role, handler) {
     var channel = null;
+    var clientId = "";
+    var adminPin = "";
+    var serverOk = false;
+    var hubOk = false;
+    var ws = null;
+    var hubWs = null;
+    var reconnectTimer = null;
+    var hubReconnectTimer = null;
+    var es = null;
+    var useSseFallback = false;
+    var seenIds = {};
+    var seenOrder = [];
+    var hub = {
+      enabled: true,
+      baseUrl: "http://5.57.39.218:6985",
+      key: "brhub-7k3m9qx2-6985"
+    };
+
+    try {
+      clientId = sessionStorage.getItem("countdown-client-id") || "";
+      if (!clientId) {
+        clientId = role + "-" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+        sessionStorage.setItem("countdown-client-id", clientId);
+      }
+      adminPin = sessionStorage.getItem("countdown-admin-pin") || "";
+    } catch (err) {
+      clientId = role + "-" + String(Date.now());
+    }
+
     try {
       channel = new BroadcastChannel(CHANNEL);
     } catch (err) {}
 
-    function emit(message) {
-      var msg = Object.assign({ channel: CHANNEL, from: role }, message);
+    function rememberId(id) {
+      if (!id) return false;
+      if (seenIds[id]) return true;
+      seenIds[id] = 1;
+      seenOrder.push(id);
+      if (seenOrder.length > 500) {
+        seenOrder.splice(0, 200).forEach(function (key) { delete seenIds[key]; });
+      }
+      return false;
+    }
+
+    function onMsg(msg) {
+      if (!msg || msg.channel !== CHANNEL) return;
+      if (msg.id && rememberId(msg.id)) return;
+      if (msg.clientId && msg.clientId === clientId) return;
+      if (!msg.clientId && msg.from === role) return;
+      handler(msg);
+    }
+
+    function emitLocal(msg) {
       if (channel) {
         try { channel.postMessage(msg); } catch (err) {}
       }
@@ -185,10 +237,237 @@
       }
     }
 
-    function onMsg(msg) {
-      if (!msg || msg.channel !== CHANNEL) return;
-      if (msg.from === role) return;
-      handler(msg);
+    function wsUrl() {
+      var proto = location.protocol === "https:" ? "wss:" : "ws:";
+      var path = "/ws?role=" + encodeURIComponent(role) + "&clientId=" + encodeURIComponent(clientId);
+      if (adminPin) path += "&pin=" + encodeURIComponent(adminPin);
+      return proto + "//" + location.host + path;
+    }
+
+    function makeId() {
+      return clientId + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+    }
+
+    function reportHub(ok, base, error) {
+      hubOk = !!ok;
+      handler({
+        channel: CHANNEL,
+        from: "server",
+        clientId: "server",
+        type: "hub-status",
+        ok: !!ok,
+        base: base || hub.baseUrl,
+        error: error || ""
+      });
+    }
+
+    function hubWsUrl() {
+      var base = String(hub.baseUrl || "").replace(/\/$/, "");
+      if (!base) return "";
+      var wsBase = base.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
+      var url = wsBase + "/ws?role=" + encodeURIComponent(role) + "&clientId=" + encodeURIComponent(clientId);
+      if (hub.key) url += "&key=" + encodeURIComponent(hub.key);
+      return url;
+    }
+
+    function emitHub(msg) {
+      if (!hub.enabled || !hub.baseUrl) return;
+      if (msg.via === "hub") return;
+      var t = msg.type || "";
+      if (t === "ping" || t === "heartbeat" || t === "peers" || t === "ready" || t === "auth" || t === "hub-status") return;
+      if (!hubWs || hubWs.readyState !== 1) return;
+      try { hubWs.send(JSON.stringify(msg)); } catch (err) {}
+    }
+
+    function emitHttp(msg) {
+      if (typeof fetch !== "function") return;
+      var headers = { "Content-Type": "application/json" };
+      if (adminPin) headers["X-Admin-Pin"] = adminPin;
+      fetch("/api/room/publish", {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify(msg),
+        keepalive: true
+      }).then(function (res) {
+        if (!ws || ws.readyState !== 1) serverOk = res.ok || res.status === 401;
+        return res.json().catch(function () { return null; }).then(function (data) {
+          if (res.status === 401 && handler) {
+            handler({ channel: CHANNEL, from: "server", type: "auth", ok: false, error: (data && data.error) || "pin" });
+          }
+          if (data && data.peers) {
+            handler({ channel: CHANNEL, from: "server", clientId: "server", type: "peers", peers: data.peers });
+          }
+        });
+      }).catch(function () {
+        if (!ws || ws.readyState !== 1) serverOk = false;
+      });
+    }
+
+    function emit(message) {
+      var msg = Object.assign({
+        channel: CHANNEL,
+        from: role,
+        clientId: clientId,
+        clientNow: Date.now(),
+        id: makeId()
+      }, message);
+      if (adminPin && (msg.type === "state" || msg.type === "cover" || msg.type === "hello" || msg.type === "speak-play")) {
+        msg.pin = adminPin;
+      }
+      emitLocal(msg);
+      var localUp = ws && ws.readyState === 1;
+      if (localUp) {
+        try { ws.send(JSON.stringify(msg)); } catch (err) { emitHttp(msg); emitHub(msg); }
+      } else {
+        emitHttp(msg);
+        emitHub(msg);
+      }
+    }
+
+    function connectSse() {
+      if (typeof EventSource === "undefined") return;
+      if (es) {
+        try { es.close(); } catch (err) {}
+        es = null;
+      }
+      var url = "/api/room/events?role=" + encodeURIComponent(role) + "&clientId=" + encodeURIComponent(clientId);
+      try {
+        es = new EventSource(url);
+      } catch (err) {
+        return;
+      }
+      es.onopen = function () { serverOk = true; };
+      es.onmessage = function (e) {
+        serverOk = true;
+        try { onMsg(JSON.parse(e.data)); } catch (err) {}
+      };
+      es.onerror = function () {
+        if (!ws || ws.readyState !== 1) serverOk = false;
+      };
+    }
+
+    function connectWs() {
+      if (typeof WebSocket === "undefined") {
+        useSseFallback = true;
+        connectSse();
+        return;
+      }
+      if (ws) {
+        try { ws.close(); } catch (err) {}
+        ws = null;
+      }
+      try {
+        ws = new WebSocket(wsUrl());
+      } catch (err) {
+        useSseFallback = true;
+        connectSse();
+        scheduleReconnect();
+        return;
+      }
+      ws.onopen = function () {
+        serverOk = true;
+        useSseFallback = false;
+        if (es) {
+          try { es.close(); } catch (err) {}
+          es = null;
+        }
+        try {
+          ws.send(JSON.stringify({
+            channel: CHANNEL,
+            from: role,
+            clientId: clientId,
+            type: "hello",
+            pin: adminPin || undefined
+          }));
+        } catch (err) {}
+      };
+      ws.onmessage = function (e) {
+        serverOk = true;
+        try { onMsg(JSON.parse(e.data)); } catch (err) {}
+      };
+      ws.onerror = function () {
+        serverOk = false;
+      };
+      ws.onclose = function () {
+        serverOk = false;
+        ws = null;
+        if (!useSseFallback) {
+          useSseFallback = true;
+          connectSse();
+        }
+        scheduleReconnect();
+      };
+    }
+
+    function connectHub() {
+      if (hubWs) {
+        try { hubWs.onclose = null; hubWs.close(); } catch (err) {}
+        hubWs = null;
+      }
+      if (!hub.enabled || !hub.baseUrl || typeof WebSocket === "undefined") {
+        reportHub(false, hub.baseUrl, "هاب خاموش است");
+        return;
+      }
+      var url = hubWsUrl();
+      var sock;
+      try {
+        sock = new WebSocket(url);
+      } catch (err) {
+        reportHub(false, hub.baseUrl, "خطای اتصال");
+        scheduleHubReconnect();
+        return;
+      }
+      hubWs = sock;
+      sock.onopen = function () {
+        reportHub(true, String(hub.baseUrl).replace(/^https?:\/\//, ""), "");
+        try {
+          sock.send(JSON.stringify({
+            channel: CHANNEL,
+            from: role,
+            clientId: clientId,
+            id: makeId(),
+            type: "hello"
+          }));
+        } catch (err) {}
+      };
+      sock.onmessage = function (e) {
+        hubOk = true;
+        if (ws && ws.readyState === 1) return;
+        var msg;
+        try { msg = JSON.parse(e.data); } catch (err) { return; }
+        if (!msg || msg.channel !== CHANNEL) return;
+        msg.via = "hub";
+        onMsg(msg);
+      };
+      sock.onerror = function () {
+        reportHub(false, hub.baseUrl, "خطای اتصال");
+      };
+      sock.onclose = function () {
+        if (hubWs !== sock) return;
+        hubWs = null;
+        reportHub(false, hub.baseUrl, "قطع شد");
+        scheduleHubReconnect();
+      };
+    }
+
+    function scheduleReconnect() {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connectWs, 1400);
+    }
+
+    function scheduleHubReconnect() {
+      if (hubReconnectTimer) clearTimeout(hubReconnectTimer);
+      hubReconnectTimer = setTimeout(connectHub, 1500);
+    }
+
+    function applyHubConfig(cfg) {
+      if (!cfg || typeof cfg !== "object") return;
+      var prev = hub.baseUrl + "|" + hub.key + "|" + (hub.enabled ? "1" : "0");
+      if (typeof cfg.enabled === "boolean") hub.enabled = cfg.enabled;
+      if (cfg.baseUrl) hub.baseUrl = String(cfg.baseUrl).replace(/\/$/, "");
+      if (typeof cfg.key === "string" && cfg.key) hub.key = cfg.key;
+      var next = hub.baseUrl + "|" + hub.key + "|" + (hub.enabled ? "1" : "0");
+      if (next !== prev) connectHub();
     }
 
     if (channel) channel.onmessage = function (e) { onMsg(e.data); };
@@ -200,7 +479,38 @@
       } catch (err) {}
     });
 
-    return { emit: emit };
+    connectWs();
+    connectHub();
+
+    if (typeof fetch === "function") {
+      fetch("/api/room/info")
+        .then(function (r) { return r.json(); })
+        .then(function (info) {
+          if (info && info.hub) applyHubConfig(info.hub);
+        })
+        .catch(function () {});
+    }
+
+    return {
+      emit: emit,
+      clientId: clientId,
+      setPin: function (pin) {
+        adminPin = typeof pin === "string" ? pin : "";
+        try { sessionStorage.setItem("countdown-admin-pin", adminPin); } catch (err) {}
+        if (ws && ws.readyState === 1) {
+          try { ws.close(); } catch (err) {}
+        } else {
+          connectWs();
+        }
+      },
+      getPin: function () { return adminPin; },
+      isServerOk: function () { return serverOk || hubOk; },
+      isHubOk: function () { return hubOk; },
+      isNtfyOk: function () { return hubOk; },
+      getHub: function () {
+        return { baseUrl: hub.baseUrl, key: hub.key, ok: hubOk };
+      }
+    };
   }
 
   function recover(state, now) {
@@ -497,6 +807,7 @@
     save: save,
     recover: recover,
     computeRemaining: computeRemaining,
+    toLocalEndsAt: toLocalEndsAt,
     wholeSeconds: wholeSeconds,
     formatClock: formatClock,
     urgency: urgency,

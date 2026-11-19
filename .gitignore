@@ -23,6 +23,7 @@ __pycache__/
 .env
 .env.*
 camera.json
+room.json
 _tts_cache/
 _captures/
 _cam_snap.jpg

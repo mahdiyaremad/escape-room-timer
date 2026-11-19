@@ -18,7 +18,9 @@
         <span>CONTROL</span>
       </div>
       <div class="meta">
+        <a id="remote-download" class="chip remote-dl" href="/api/remote-control?download=1" download="blackroom-remote-control.html" title="دانلود پنل موبایل (هاب)">REMOTE HTML</a>
         <span class="linkline"><i id="lamp" class="lamp"></i><span id="link">LINK  LOST</span></span>
+        <span class="linkline ntfy-line" id="ntfy-line" title="وضعیت اتصال هاب"><i id="ntfy-lamp" class="lamp"></i><span id="ntfy-status">HUB در حال اتصال</span></span>
         <span class="status" id="status">ARMED</span>
       </div>
     </header>
@@ -98,10 +100,11 @@
                 <span class="pulse-label">PULSE</span>
               </button>
               <button id="notif" class="danger chip" type="button">NOTIF</button>
-              <button id="speak" class="speak-toggle chip" type="button" aria-pressed="false" title="Talkback mic to speakers">
+              <button id="speak" class="speak-toggle chip" type="button" aria-pressed="false" title="Record a clip in this panel">
                 <span class="speak-dot" aria-hidden="true"></span>
-                <span>SPEAK</span>
+                <span>REC</span>
               </button>
+              <button id="speak-play" class="chip" type="button" title="Play the last clip in this panel">PLAY</button>
               <button id="timer-vis" class="timer-toggle chip" type="button" aria-pressed="true" title="Show or hide timer on display">TIMER</button>
             </div>
           </div>

@@ -8,6 +8,8 @@
   var statusEl = document.getElementById("status");
   var linkEl = document.getElementById("link");
   var lampEl = document.getElementById("lamp");
+  var ntfyStatusEl = document.getElementById("ntfy-status");
+  var ntfyLampEl = document.getElementById("ntfy-lamp");
   var minEl = document.getElementById("minutes");
   var secEl = document.getElementById("seconds");
   var transportEl = document.getElementById("transport");
@@ -67,6 +69,12 @@
   var coverClearEl = document.getElementById("cover-clear");
   var coverNameEl = document.getElementById("cover-name");
   var speakEl = document.getElementById("speak");
+  var speakPlayEl = document.getElementById("speak-play");
+  var speakRecording = false;
+  var speakRecorder = null;
+  var speakChunks = [];
+  var speakBlob = null;
+  var speakRemoteUrl = "";
   var sfxHintEl = document.getElementById("sfx-hint");
   var logEl = document.getElementById("log");
   var snrEl = document.getElementById("snr");
@@ -128,18 +136,143 @@
   ];
 
   var link = C.createLink("control", onMsg);
+  var authBlocked = false;
+  var serverDisplayAlive = false;
+
+  function applyTick(msg) {
+    if (!msg || typeof msg.revision !== "number" || msg.revision < state.revision) return;
+    if (msg.status === "ended" || msg.revision > state.revision) {
+      state.status = msg.status || state.status;
+      state.remainingMs = msg.status === "ended" ? 0 : (typeof msg.remainingMs === "number" ? msg.remainingMs : state.remainingMs);
+      state.endsAt = msg.status === "ended" ? null : C.toLocalEndsAt(msg.endsAt, msg.serverNow);
+      state.revision = msg.revision;
+      presenter.sync(state);
+      C.save(state);
+      paint();
+      return;
+    }
+    if (state.status === "running" && msg.revision === state.revision) {
+      if (typeof msg.remainingMs === "number") state.remainingMs = msg.remainingMs;
+      if (typeof msg.endsAt === "number") state.endsAt = C.toLocalEndsAt(msg.endsAt, msg.serverNow);
+      paint();
+    }
+  }
 
   function onMsg(msg) {
-    if (msg.from === "display" && (msg.type === "ping" || msg.type === "hello")) {
+    if (!msg) return;
+    if (msg.type === "auth" && msg.ok === false) {
+      authBlocked = true;
+      if (linkEl) linkEl.textContent = "PIN  NEEDED";
+      ensureAdminPin(true);
+      return;
+    }
+    if (msg.type === "peers" && msg.peers) {
+      serverDisplayAlive = !!msg.peers.displayAlive;
+      if (serverDisplayAlive) lastPing = Date.now();
+      return;
+    }
+    if ((msg.from === "display" || msg.from === "server") && (msg.type === "ping" || msg.type === "hello" || msg.type === "heartbeat")) {
       lastPing = Date.now();
     }
-    if (msg.type === "hello" || msg.type === "request") {
-      link.emit({ type: "state", state: state });
-      if (state.bgImage) {
-        link.emit({ type: "cover", bgId: state.bgId || 0, bgImage: state.bgImage });
-      }
-    }
     if (msg.type === "expired") trySeal();
+    if (msg.type === "tick") {
+      applyTick(msg);
+      return;
+    }
+    if (msg.type === "state" && msg.state && typeof msg.state.revision === "number") {
+      var stamped = typeof msg.serverNow === "number" || typeof msg.state.serverNow === "number";
+      if (msg.clientId && msg.clientId === link.clientId && !stamped) return;
+      if (msg.state.revision < state.revision) return;
+      var incoming = msg.state;
+      if (
+        (!incoming.bgImage || !String(incoming.bgImage)) &&
+        state.bgImage &&
+        typeof incoming.bgId === "number" &&
+        incoming.bgId === (state.bgId || 0)
+      ) {
+        incoming = Object.assign({}, incoming, { bgImage: state.bgImage });
+      }
+      incoming = Object.assign({}, incoming);
+      var serverNow = typeof msg.serverNow === "number" ? msg.serverNow : incoming.serverNow;
+      if (typeof incoming.endsAt === "number" && typeof serverNow === "number") {
+        incoming.endsAt = C.toLocalEndsAt(incoming.endsAt, serverNow);
+      }
+      delete incoming.serverNow;
+      state = Object.assign(C.create(), incoming);
+      presenter.sync(state);
+      C.save(state);
+      paint();
+    }
+    if (msg.type === "speak-play" && msg.url) {
+      if (!(msg.clientId && msg.clientId === link.clientId)) {
+        playSpeakSource(msg.url);
+        pushLog("speak play");
+      }
+      return;
+    }
+    if (msg.type === "cam-photo" && msg.url) {
+      addRemoteShot(msg.url, msg.mediaId || "snap");
+      return;
+    }
+    if (msg.type === "hub-status") return;
+    if (msg.type === "cover") {
+      if (typeof msg.bgId === "number") state.bgId = msg.bgId;
+      if (typeof msg.bgImage === "string") state.bgImage = msg.bgImage;
+      C.save(state);
+      paint();
+    }
+  }
+
+  function ensureAdminPin(force) {
+    var have = link.getPin && link.getPin();
+    if (have && !force) return Promise.resolve(true);
+    return fetch("/api/room/info")
+      .then(function (r) { return r.json(); })
+      .then(function (info) {
+        if (!info || !info.pinRequired) {
+          link.setPin("");
+          authBlocked = false;
+          return true;
+        }
+        if (have && !force) {
+          return fetch("/api/room/auth", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pin: have })
+          }).then(function (r) {
+            if (r.ok) {
+              authBlocked = false;
+              return true;
+            }
+            return askPin();
+          });
+        }
+        return askPin();
+      })
+      .catch(function () { return askPin(); });
+  }
+
+  function askPin() {
+    var pin = window.prompt("پین ادمین کنترل پنل (room.json → adminPin):", link.getPin() || "");
+    if (pin == null) return false;
+    link.setPin(String(pin));
+    return fetch("/api/room/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: String(pin) })
+    }).then(function (r) {
+      if (!r.ok) {
+        window.alert("پین اشتباه است.");
+        authBlocked = true;
+        return false;
+      }
+      authBlocked = false;
+      broadcast();
+      return true;
+    }).catch(function () {
+      authBlocked = false;
+      return true;
+    });
   }
 
   function slimState(full) {
@@ -283,10 +416,9 @@
       pulseEl.classList.toggle("is-on", pulseOn);
       pulseEl.classList.toggle("is-off", !pulseOn);
     }
-    if (speakEl) {
-      var speakOn = !!state.speak;
-      speakEl.setAttribute("aria-pressed", speakOn ? "true" : "false");
-      speakEl.classList.toggle("is-on", speakOn);
+    if (speakEl && !speakRecording) {
+      speakEl.setAttribute("aria-pressed", "false");
+      speakEl.classList.remove("is-on");
     }
     if (timerVisEl) {
       var timerOn = state.timerVisible !== false;
@@ -538,27 +670,162 @@
     });
   }
 
-  function applySpeak(on) {
-    if (!speakAudio) return Promise.resolve(false);
+  function speakMime() {
+    var list = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+    for (var i = 0; i < list.length; i++) {
+      if (MediaRecorder.isTypeSupported(list[i])) return list[i];
+    }
+    return "";
+  }
+
+  function hubMediaUrl() {
+    var hub = link.getHub ? link.getHub() : null;
+    if (!hub || !hub.baseUrl) return "";
+    return String(hub.baseUrl).replace(/\/$/, "") + "/media?key=" + encodeURIComponent(hub.key || "");
+  }
+
+  function playSpeakSource(source) {
+    if (!speakAudio || !source) return;
     var run = speakArmed ? Promise.resolve() : speakAudio.arm().then(function () { speakArmed = true; });
-    return run.then(function () {
+    run.then(function () {
       speakAudio.setVolume(state.volume);
-      return speakAudio.setSpeak(!!on);
-    }).then(function (ok) {
-      if (on && !ok) {
-        publish(function (draft) { return C.setSpeak(draft, false); }, "speak denied");
-        pushLog("mic denied");
-      }
-      return ok;
+      speakAudio.playCue(source);
     });
   }
 
+  function addRemoteShot(url, name) {
+    if (!camShotsEl || !url) return;
+    var linkElShot = document.createElement("a");
+    linkElShot.href = url;
+    linkElShot.target = "_blank";
+    linkElShot.rel = "noopener";
+    var img = document.createElement("img");
+    img.src = url;
+    img.alt = name || "snap";
+    linkElShot.appendChild(img);
+    camShotsEl.insertBefore(linkElShot, camShotsEl.firstChild);
+    setCamStatus("عکس از هاب: " + (name || "snap"));
+  }
+
+  function uploadSpeak(blob) {
+    var url = hubMediaUrl();
+    if (!url || !blob) return Promise.resolve(null);
+    return fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": (blob.type || "application/octet-stream").split(";")[0],
+        "X-Kind": "speak"
+      },
+      body: blob
+    }).then(function (res) {
+      if (!res.ok) throw new Error("upload");
+      return res.json();
+    }).then(function (data) {
+      speakRemoteUrl = (data && data.url) || "";
+      if (speakRemoteUrl) pushLog("speak saved");
+      return data;
+    }).catch(function () {
+      pushLog("speak upload failed");
+      return null;
+    });
+  }
+
+  function setSpeakRecUi(on) {
+    speakRecording = !!on;
+    if (!speakEl) return;
+    speakEl.setAttribute("aria-pressed", on ? "true" : "false");
+    speakEl.classList.toggle("is-on", !!on);
+    var label = speakEl.querySelector("span:last-child");
+    if (label) label.textContent = on ? "STOP" : "REC";
+  }
+
+  function stopSpeakRec() {
+    if (!speakRecorder) {
+      setSpeakRecUi(false);
+      return;
+    }
+    try { speakRecorder.stop(); } catch (err) { setSpeakRecUi(false); }
+  }
+
+  function startSpeakRec() {
+    if (speakRecorder) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      pushLog("mic unsupported");
+      return;
+    }
+    var mime = speakMime();
+    navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false
+    }).then(function (stream) {
+      speakChunks = [];
+      var rec;
+      try {
+        rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      } catch (err) {
+        stream.getTracks().forEach(function (track) { track.stop(); });
+        pushLog("mic recorder failed");
+        return;
+      }
+      speakRecorder = rec;
+      rec.ondataavailable = function (e) {
+        if (e.data && e.data.size) speakChunks.push(e.data);
+      };
+      rec.onstop = function () {
+        stream.getTracks().forEach(function (track) { track.stop(); });
+        speakRecorder = null;
+        setSpeakRecUi(false);
+        var type = (mime || "audio/webm").split(";")[0];
+        var blob = new Blob(speakChunks, { type: type });
+        speakChunks = [];
+        if (!blob.size) {
+          pushLog("speak empty");
+          return;
+        }
+        speakBlob = blob;
+        speakRemoteUrl = "";
+        uploadSpeak(blob);
+        pushLog("speak recorded");
+      };
+      rec.start();
+      setSpeakRecUi(true);
+      pushLog("speak rec");
+    }).catch(function () {
+      setSpeakRecUi(false);
+      pushLog("mic denied");
+    });
+  }
+
+  document.addEventListener("pointerdown", function () {
+    if (!speakAudio || speakArmed) return;
+    speakAudio.arm().then(function () { speakArmed = true; });
+  }, { once: true });
+
   if (speakEl) {
     speakEl.addEventListener("click", function () {
-      var next = !state.speak;
-      var ok = publish(function (draft) { return C.setSpeak(draft, next); }, next ? "speak on" : "speak off");
-      if (!ok) return;
-      applySpeak(next);
+      if (speakRecording || speakRecorder) stopSpeakRec();
+      else startSpeakRec();
+    });
+  }
+
+  if (speakPlayEl) {
+    speakPlayEl.addEventListener("click", function () {
+      var source = speakBlob || speakRemoteUrl;
+      if (!source) {
+        pushLog("speak empty");
+        return;
+      }
+      playSpeakSource(source);
+      if (speakRemoteUrl) {
+        link.emit({ type: "speak-play", url: speakRemoteUrl, mime: (speakBlob && speakBlob.type) || "" });
+        pushLog("speak play");
+      } else if (speakBlob && hubMediaUrl()) {
+        uploadSpeak(speakBlob).then(function () {
+          if (!speakRemoteUrl) return;
+          link.emit({ type: "speak-play", url: speakRemoteUrl, mime: speakBlob.type || "" });
+        });
+      }
     });
   }
 
@@ -574,7 +841,8 @@
   }
 
   function sfxPath(file) {
-    return mediaUrl("audio/" + String(file || "").replace(/^\/+/, ""));
+    // Relative path so LAN + ntfy remote both resolve on the Display origin.
+    return "audio/" + String(file || "").replace(/^\/+/, "");
   }
 
   function coverPath(file) {
@@ -754,8 +1022,6 @@
   renderSounds(window.CountdownSounds || []);
   renderSoundbar();
   renderCovers(window.CountdownImages || []);
-
-  if (state.speak) applySpeak(true);
 
   captionShow.addEventListener("click", function () {
     var text = (captionInput.value || "").trim();
@@ -1154,9 +1420,14 @@
   });
 
   setInterval(function () {
-    var ok = Date.now() - lastPing < 2500;
-    lampEl.classList.toggle("on", ok);
-    linkEl.textContent = ok ? "LINK  OK" : "LINK  LOST";
+    var localOk = Date.now() - lastPing < 2500;
+    var ok = localOk || serverDisplayAlive || (link.isServerOk && link.isServerOk());
+    lampEl.classList.toggle("on", !!(localOk || serverDisplayAlive));
+    if (authBlocked) linkEl.textContent = "PIN  NEEDED";
+    else if (localOk || serverDisplayAlive) linkEl.textContent = "LINK  OK";
+    else if (link.isHubOk && link.isHubOk()) linkEl.textContent = "HUB  OK";
+    else if (link.isServerOk && link.isServerOk()) linkEl.textContent = "HUB  OK";
+    else linkEl.textContent = "LINK  LOST";
   }, 300);
 
   setInterval(function () {
@@ -1174,14 +1445,81 @@
       trySeal();
       return;
     }
-    link.emit({ type: "state", state: slimState(state) });
-  }, 400);
+    link.emit({ type: "heartbeat", revision: state.revision, at: Date.now() });
+  }, 900);
 
   var hadStore = !!C.load();
-  broadcast();
-  if (!hadStore) pushLog("channel open");
-  else if (state.status === "ended") pushLog("sequence sealed");
-  else pushLog("channel restored");
+  var bootRevision = state.revision;
+
+  function paintNtfy(status) {
+    if (!ntfyStatusEl || !ntfyLampEl) return;
+    var ok = !!(status && status.ok);
+    var pending = !status || (!ok && !status.lastError && !status.lastOkAt);
+    ntfyLampEl.classList.toggle("on", ok);
+    if (pending) ntfyStatusEl.textContent = "HUB در حال اتصال";
+    else if (ok) ntfyStatusEl.textContent = "HUB متصل";
+    else ntfyStatusEl.textContent = "HUB ناموفق";
+    ntfyStatusEl.title = (status && (status.lastError || status.activeBase)) || "";
+  }
+
+  function pollNtfy() {
+    fetch("/api/room/info")
+      .then(function (r) { return r.json(); })
+      .then(function (info) {
+        paintNtfy(info && info.hub && info.hub.status);
+      })
+      .catch(function () {
+        paintNtfy({ ok: false, lastError: "سرور محلی در دسترس نیست", lastOkAt: 1 });
+      });
+  }
+
+  function reconcileWithServer() {
+    return fetch("/api/room/state")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (state.revision !== bootRevision) return;
+        if (!data || !data.state || typeof data.state.revision !== "number") {
+          broadcast();
+          return;
+        }
+        if (data.state.revision > state.revision) {
+          onMsg({
+            channel: C.CHANNEL,
+            from: "server",
+            clientId: "server",
+            type: "state",
+            serverNow: data.serverNow || data.state.serverNow,
+            state: data.state
+          });
+          pushLog("synced from server");
+          return;
+        }
+        if (data.state.revision < state.revision) {
+          broadcast();
+          pushLog("server caught up");
+          return;
+        }
+        onMsg({
+          channel: C.CHANNEL,
+          from: "server",
+          clientId: "server",
+          type: "state",
+          serverNow: data.serverNow || data.state.serverNow,
+          state: data.state
+        });
+      })
+      .catch(function () { broadcast(); });
+  }
+
+  ensureAdminPin(false).then(function () {
+    return reconcileWithServer();
+  }).then(function () {
+    if (!hadStore) pushLog("room hub open");
+    else if (state.status === "ended") pushLog("sequence sealed");
+    else pushLog("channel restored");
+  });
+  pollNtfy();
+  setInterval(pollNtfy, 2000);
   paint();
 
   function frame() {

@@ -97,7 +97,19 @@ header {
   align-items: center;
   gap: 14px;
 }
+a.remote-dl {
+  text-decoration: none;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  padding: 7px 10px;
+  border: 1px solid var(--line, #2a322c);
+  border-radius: 999px;
+  color: var(--text);
+  background: transparent;
+}
+a.remote-dl:hover { border-color: var(--accent, #c6f5a4); color: var(--accent, #c6f5a4); }
 .linkline { display: inline-flex; align-items: center; gap: 7px; color: var(--text); }
+.ntfy-line { font-size: 11px; letter-spacing: 0.08em; white-space: nowrap; }
 
 .lamp {
   width: 6px;

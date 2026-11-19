@@ -1,0 +1,12 @@
+{
+  "bind": "0.0.0.0",
+  "port": 8765,
+  "adminPin": "blackroom",
+  "roomName": "BLACKROOM",
+  "publicUrl": "",
+  "hub": {
+    "enabled": true,
+    "baseUrl": "http://5.57.39.218:6985",
+    "key": "brhub-7k3m9qx2-6985"
+  }
+}
